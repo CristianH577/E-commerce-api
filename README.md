@@ -1,1 +1,1 @@
-Repositorio de api: https://github.com/CristianH577/E-commerce-app
+Repositorio de app: https://github.com/CristianH577/E-commerce-app
