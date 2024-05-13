@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import products, clients, tickets, sells, stats
+from routers import products, clients, tickets, sells, stats, history
 
 
 #  -----------------------------------------------------------------------------------------
@@ -25,6 +25,7 @@ app.include_router(clients.router)
 app.include_router(tickets.router)
 app.include_router(sells.router)
 app.include_router(stats.router)
+app.include_router(history.router)
 
 
 # funciones --------------------------------------------------------------------------------

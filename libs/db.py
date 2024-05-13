@@ -24,103 +24,74 @@ def connect_db():
         )
 
 
-def get_db_conn():
+async def handleAction(
+    action: str, query: str, data: list = [], msg: str = None, allow_raise: bool = True
+):
     conn = connect_db()
+    cursor = conn.cursor()
+
     try:
-        yield conn
+        cursor.execute(query, data)
+
+        if action != "select":
+            conn.commit()
+
+        if action == "select":
+            return {"description": cursor.description, "rows": cursor.fetchall()}
+        elif action == "insert":
+            if cursor.rowcount > 0:
+                return cursor.lastrowid
+        elif action in ["delete", "update"]:
+            if cursor.rowcount > 0:
+                return cursor.rowcount
+
+    except:
+        if not msg:
+            msg = "Error al manejar la base de datos"
+
+        if allow_raise:
+            raise HTTPException(status_code=400, detail=msg)
+
     finally:
+        cursor.close()
         conn.close()
 
-
-async def select(
-    query: str, data: list = [], of: str = None, conn: MySQLdb.Connection = connect_db()
-):
-    try:
-        cursor = conn.cursor()
-        cursor.execute(query, data)
-        results = cursor.fetchall()
-
-        if results:
-            keys = [desc[0] for desc in cursor.description]
-            results_list = [dict(zip(keys, row)) for row in results]
-            return results_list
-
-    except:
-        msg = "Error al obtener datos"
-        if of:
-            msg += f": {of}"
-        raise HTTPException(status_code=400, detail=msg)
-
-    finally:
-        cursor.close()
-
     return False
 
 
-async def insert(
-    query: str, data: list = [], of: str = None, conn: MySQLdb.Connection = connect_db()
-):
-    try:
-        cursor = conn.cursor()
-        cursor.execute(query, data)
-        conn.commit()
+async def select(query: str, data: list = [], of: str = None, allow_raise: bool = True):
+    msg = "Error al obtener datos"
+    if of:
+        msg += f": {of}"
 
-        if cursor.rowcount > 0:
-            return cursor.lastrowid
+    response = await handleAction("select", query, data, msg, allow_raise)
 
-    except:
-        msg = "Error al guardar datos"
-        if of:
-            msg += f": {of}"
-        raise HTTPException(status_code=400, detail=msg)
+    if response:
+        keys = [desc[0] for desc in response["description"]]
+        response = [dict(zip(keys, row)) for row in response["rows"]]
 
-    finally:
-        cursor.close()
-
-    return False
+    return response
 
 
-async def delete(
-    query: str, data: list = [], of: str = None, conn: MySQLdb.Connection = connect_db()
-):
-    try:
-        cursor = conn.cursor()
-        cursor.execute(query, data)
-        conn.commit()
+async def insert(query: str, data: list = [], of: str = None, allow_raise: bool = True):
+    msg = "Error al guardar datos"
+    if of:
+        msg += f": {of}"
 
-        if cursor.rowcount > 0:
-            return cursor.rowcount
-
-    except:
-        msg = "Error al eliminar datos"
-        if of:
-            msg += f": {of}"
-        raise HTTPException(status_code=400, detail=msg)
-
-    finally:
-        cursor.close()
-
-    return False
+    return await handleAction("insert", query, data, msg, allow_raise)
 
 
-async def update(
-    query: str, data: list = [], of: str = None, conn: MySQLdb.Connection = connect_db()
-):
-    try:
-        cursor = conn.cursor()
-        cursor.execute(query, data)
-        conn.commit()
+async def delete(query: str, data: list = [], of: str = None, allow_raise: bool = True):
+    msg = "Error al eliminar datos"
+    if of:
+        msg += f": {of}"
 
-        if cursor.rowcount > 0:
-            return cursor.rowcount
+    return await handleAction("delete", query, data, msg, allow_raise)
 
-    except:
-        msg = "Error al actualizar datos"
-        if of:
-            msg += f": {of}"
-        raise HTTPException(status_code=400, detail=msg)
 
-    finally:
-        cursor.close()
+async def update(query: str, data: list = [], of: str = None, allow_raise: bool = True):
+    msg = "Error al actualizar datos"
+    if of:
+        msg += f": {of}"
 
-    return False
+    return await handleAction("update", query, data, msg, allow_raise)

@@ -1,11 +1,13 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 
 import os
 import json
+from datetime import datetime
 
 import libs.db as db
 from libs.usefull_functions import getRandomDate
 from libs.models import Client
+from routers.history import add as add_history
 
 
 # configs ----------------------------------------------------------------------
@@ -91,10 +93,16 @@ async def delete(id: str):
     if not id:
         raise HTTPException(status_code=404, detail="Error de formulario")
 
+    # para el historial
+    data_old = await getById(id)
+    data_old = data_old["value"][0]
+    data_old = str(data_old)
+
     query = f"DELETE FROM clients WHERE id_client={id}"
     results = await db.delete(query, of="clientes")
 
     if results:
+        await add_history("delete", "clients", data_old)
         return {"detail": "Eliminado"}
     else:
         raise HTTPException(
@@ -110,15 +118,25 @@ async def update(client: Client):
     if not client:
         raise HTTPException(status_code=404, detail="Error de formulario")
 
-    query = "UPDATE clients SET name_client=%s, category_client=%s WHERE id_client=%s"
+    # para el historial
+    data_old = await getById(client.id_client)
+    data_old = data_old["value"][0]
+    data_old = str(data_old)
+
+    # agrego el elemento
+    client.date = datetime.now()
+    query = "UPDATE clients SET name_client=%s, category_client=%s, date=%s WHERE id_client=%s"
     data = [
         client.name_client,
         client.category_client,
+        client.date,
         client.id_client,
     ]
     results = await db.update(query, data=data, of="clientes")
 
     if results:
+        # si se guardan los datos agrego vieja data al historial
+        await add_history("update", "clients", data_old)
         return {"detail": "Actualizado"}
     else:
         raise HTTPException(
@@ -164,5 +182,3 @@ async def getAllIds():
             ids.append(r["id_client"])
 
         return {"value": ids}
-
-

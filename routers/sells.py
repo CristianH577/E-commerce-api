@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
+from typing import List
 
 import libs.db as db
 from libs.models import Sell
@@ -12,22 +13,24 @@ router = APIRouter(
 
 
 # functions --------------------------------------------------------------------------------
-async def updateStock(sell: Sell):
+async def updateStock(sell: Sell, allow_raise: bool = False):
     query = "UPDATE products SET stock = stock - %s WHERE id_product=%s"
     data = [sell.quantity, sell.id_product]
+    of = "productos"
 
-    return await db.update(query, data=data, of="productos")
+    return await db.update(query, data, of, allow_raise)
 
 
-async def addSell(sell: Sell):
-    query = "INSERT INTO sells (id_ticket,id_product,quantity) VALUES (%s,%s,%s)"
+async def addSell(sell: Sell, allow_raise: bool = False):
+    query = "INSERT INTO sells (id_ticket,id_product,quantity, subtotal) VALUES (%s,%s,%s,%s)"
     data = [
         sell.id_ticket,
         sell.id_product,
         sell.quantity,
+        sell.subtotal,
     ]
 
-    return await db.insert(query, data=data, of="ventas")
+    return await db.insert(query, data, "ventas", allow_raise)
 
 
 # direcciones --------------------------------------------------------------------------------
@@ -36,62 +39,62 @@ def index():
     raise HTTPException(status_code=200, detail="sells")
 
 
-@router.post("/add")
-async def add(sell: Sell):
-    if not sell:
-        raise HTTPException(status_code=404, detail="Error de formulario")
+# @router.post("/add")
+# async def add(sell: Sell):
+#     if not sell:
+#         raise HTTPException(status_code=404, detail="Error de formulario")
 
-    # actualizo stock
-    update_stock = await updateStock(sell)
-    if not update_stock:
-        raise HTTPException(
-            status_code=206, detail={"detail": "No se pudo actualizar actualizar stock"}
-        )
-    else:
-        # guardo la venta
-        add_sell = await addSell(sell)
+#     # actualizo stock
+#     update_stock = await updateStock(sell)
+#     if not update_stock:
+#         raise HTTPException(
+#             status_code=206, detail={"detail": "No se pudo actualizar actualizar stock"}
+#         )
+#     else:
+#         # guardo la venta
+#         add_sell = await addSell(sell)
 
-        if not add_sell:
-            sell.quantity = sell.quantity * -1
-            await updateStock(sell)
+#         if not add_sell:
+#             sell.quantity = sell.quantity * -1
+#             await updateStock(sell)
 
-            raise HTTPException(
-                status_code=206,
-                detail={"detail": "No se pudo guardar la venta"},
-            )
+#             raise HTTPException(
+#                 status_code=400,
+#                 detail="No se pudo guardar la venta",
+#             )
 
 
 @router.post("/addSells")
-async def addSells(sells: list[Sell]):
-    if not sells:
+async def addSells(id_ticket: int, sells: List[Sell]):
+    if not (id_ticket or sells):
         raise HTTPException(status_code=404, detail="Error de formulario")
 
-    msg = ""
+    names = []
     errors = []
 
     for sell in sells:
         update_stock = await updateStock(sell)
         if update_stock:
+            sell.id_ticket = id_ticket
             add_sell = await addSell(sell)
             if not add_sell:
                 sell.quantity = sell.quantity * -1
                 await updateStock(sell)
 
-        if not update_stock or not add_sell:
+        if not (update_stock or add_sell):
             errors.append(sell.id_product)
-            msg += sell.name_product + ", "
+            names.append(sell.name_product)
 
-    if errors or msg:
-        msg = msg[:-2]
-        raise HTTPException(
-            status_code=206,
-            detail={
-                "value": errors,
-                "detail": f"No se pudo completar la compra de: {msg}",
-            },
-        )
-    else:
-        return {"detail": "Agregado"}
+    if errors or names:
+        # si son muchos
+        if len(names) > 5:
+            names = names[0:4]
+            names.append("...")
+
+        msg = ", ".join(names)
+        return msg
+
+    return False
 
 
 @router.get("/getAll")
@@ -121,28 +124,32 @@ async def getById(id: int):
 
 
 @router.post("/checkSells")
-async def checkSells(sells: list[Sell]):
+async def checkSells(sells: List[Sell]):
     if not sells:
         raise HTTPException(status_code=404, detail="Error de formulario")
 
-    msg = ""
+    names = []
     errors = []
 
     for sell in sells:
-        query = "SELECT id_product FROM products WHERE id_product = %s AND stock < %s"
+        query = "SELECT id_product FROM products WHERE id_product = %s AND stock >= %s"
         data = [
             sell.id_product,
             sell.quantity,
         ]
-        results = await db.select(query, data=data, of="productos")
-        if results:
-            id = results[0]["id_product"]
-            errors.append(id)
 
-            msg += sell.name_product + ", "
+        results = await db.select(query, data, "productos", False)
+        if not results:
+            errors.append(sell.id_product)
+            names.append(sell.name_product)
 
-    if errors or msg:
-        msg = msg[:-2]
+    if errors or names:
+        # si son muchos
+        if len(names) > 5:
+            names = names[0:4]
+            names.append("...")
+
+        msg = ", ".join(names)
         raise HTTPException(
             status_code=206,
             detail={

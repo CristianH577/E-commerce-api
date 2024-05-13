@@ -5,15 +5,19 @@ from fastapi import File, UploadFile, Form
 import os
 import json
 import shutil
+from datetime import datetime
 
 import libs.db as db
 from libs.usefull_functions import getRandomDate
 from libs.models import Product
+from routers.history import add as add_history
 
 
 # configs ----------------------------------------------------------------------
 router = APIRouter(
-    prefix="/products", tags=["products"], responses={404: {"detail": "router no encontrado"}}
+    prefix="/products",
+    tags=["products"],
+    responses={404: {"detail": "router no encontrado"}},
 )
 
 
@@ -93,9 +97,15 @@ async def delete(id: int):
     if not id:
         raise HTTPException(status_code=404, detail="Error de formulario")
 
+    # para el historial
+    data_old = await getById(id)
+    data_old = data_old["value"][0]
+    data_old = str(data_old)
+
     query = f"DELETE FROM products WHERE id_product={id}"
     results = await db.delete(query, of="productos")
     if results:
+        await add_history("delete", "products", data_old)
         await deleteImgs(id)
         return {"detail": "Eliminado"}
     else:
@@ -112,7 +122,13 @@ async def update(product: Product):
     if not product:
         raise HTTPException(status_code=404, detail="Error de formulario")
 
-    product.date = getRandomDate()
+    # para el historial
+    data_old = await getById(product.id_product)
+    data_old = data_old["value"][0]
+    data_old = str(data_old)
+
+    # agrego el elemento
+    product.date = datetime.now()
 
     cols = product.__annotations__.keys()
 
@@ -129,6 +145,9 @@ async def update(product: Product):
 
     results = await db.update(query, data=data, of="productos")
     if results:
+        # si se guardan los datos agrego vieja data al historial
+        await add_history("update", "products", data_old)
+
         return {"detail": "Actualizado"}
     else:
         raise HTTPException(
